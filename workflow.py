@@ -120,12 +120,12 @@ def process_video_from_telegram(video_url, chat_id):
         
         # Formatear HTML
         print("🎨 Formateando HTML...")
-        html_content = format_as_html(summary, captions, [video_info['title']])
+        html_content = format_as_html(summary, captions, [video_info['title']], video_url)
         
         # Guardar en Readwise
         print("💾 Guardando en Readwise...")
         send_telegram_message(chat_id, "💾 <b>Guardando en Readwise...</b>")
-        result = save_to_readwise(html_content, f"Video - {video_info['title']}")
+        result = save_to_readwise(html_content, f"Video - {video_info['title']}", video_url)
         print(f"✅ Guardado en Readwise: {result}")
         
         # Notificar éxito
@@ -229,11 +229,16 @@ TRANSCRIPT:
         return f"Error al generar resumen: {data['error'].get('message', 'Error desconocido')}"
     return "Error al generar resumen: No se recibieron candidates"
 
-def format_as_html(summary, transcripts, titles):
+def format_as_html(summary, transcripts, titles, video_url=None):
     """Formatea el contenido como HTML con 3 niveles de análisis"""
     html = f"""
     <h1>Análisis de Videos</h1>
+    """
     
+    if video_url:
+        html += f'<p><b>🔗 Ver video:</b> <a href="{video_url}">{video_url}</a></p>'
+    
+    html += f"""
     {summary}
     
     <hr>
@@ -252,12 +257,16 @@ def format_as_html(summary, transcripts, titles):
     
     return html
 
-def save_to_readwise(html_content, title):
+def save_to_readwise(html_content, title, video_url=None):
     """Guarda en Readwise"""
     url = "https://readwise.io/api/v3/save/"
     headers = {"Authorization": f"Token {READWISE_TOKEN}"}
+    
+    # Usar la URL del video si se proporciona, sino usar la URL por defecto
+    article_url = video_url if video_url else "https://drive.google.com/drive/folders/1fiXci1ERcnRSN_SfwpJCZA-3z0W63xvC"
+    
     payload = {
-        "url": "https://drive.google.com/drive/folders/1fiXci1ERcnRSN_SfwpJCZA-3z0W63xvC",
+        "url": article_url,
         "html": html_content,
         "title": title,
         "author": "Video Resumen",
@@ -304,11 +313,11 @@ def process_playlist():
         
         # Paso 4: Formatear HTML
         print("🎨 Formateando HTML...")
-        html_content = format_as_html(summary, captions, titles)
+        html_content = format_as_html(summary, captions, titles, None)
         
         # Paso 5: Guardar en Readwise
         print("💾 Guardando en Readwise...")
-        result = save_to_readwise(html_content, f"Video Resumen - {datetime.now().strftime('%Y-%m-%d')}")
+        result = save_to_readwise(html_content, f"Video Resumen - {datetime.now().strftime('%Y-%m-%d')}", None)
         print(f"✅ Guardado en Readwise: {result}")
         
         send_notification("✅ Video Resumen completado y guardado en Readwise!")
