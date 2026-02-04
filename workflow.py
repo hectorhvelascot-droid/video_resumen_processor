@@ -68,7 +68,9 @@ def summarize_with_gemini(text):
     """Resume texto con Google Gemini"""
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     
-    prompt = f"""Hazme un resumen en español muy completo y que incluya toda la información relevante del siguiente transcript sin hacerme comentarios adicionales porque se va a publicar directo:
+    prompt = f"""Hazme un resumen en español muy completo y que incluya toda la información relevante del siguiente transcript sin hacerme comentarios adicionales porque se va a publicar directo.
+
+IMPORTANTE: Usa formato HTML (no markdown) con etiquetas como <h2>, <h3>, <p>, <b>, <ul>, <li>. No uses ## ni ** ni otros marcadores de markdown.
 
 {text}
 
