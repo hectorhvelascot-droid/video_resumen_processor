@@ -68,13 +68,35 @@ def summarize_with_gemini(text):
     """Resume texto con Google Gemini"""
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     
-    prompt = f"""Hazme un resumen en español muy completo y que incluya toda la información relevante del siguiente transcript sin hacerme comentarios adicionales porque se va a publicar directo.
+    prompt = f"""Analiza el siguiente transcript y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
 
-IMPORTANTE: Usa formato HTML (no markdown) con etiquetas como <h2>, <h3>, <p>, <b>, <ul>, <li>. No uses ## ni ** ni otros marcadores de markdown.
+NIVEL 1 - RESUMEN EJECUTIVO (Muy Consolidado):
+- Máximo 3-5 puntos clave
+- Lo esencial, sin detalles
+- Ideal para leer en 30 segundos
+- Usa <h3> para el título y <ul><li> para los puntos
 
-{text}
+NIVEL 2 - ANÁLISIS DETALLADO (Desarrollado):
+- Todos los temas principales desarrollados
+- Datos específicos, cifras, nombres, fechas
+- Estructura por secciones con <h3> y <h4>
+- Incluye contexto y relación entre ideas
+- Usa <p> para párrafos y <b> para énfasis
 
-Después dame un segundo resumen mucho más detallado que permita ver datos y capaz de información más específicas y de interés particular. Sin hacerme comentarios adicionales porque se va a publicar directo."""
+FORMATO REQUERIDO:
+<h2>NIVEL 1: Resumen Ejecutivo</h2>
+[contenido]
+
+<h2>NIVEL 2: Análisis Detallado</h2>
+[contenido]
+
+IMPORTANTE: 
+- Solo HTML válido, NO uses markdown (##, **, etc.)
+- No agregues comentarios introductorios ni de cierre
+- El contenido debe estar listo para publicar directo
+
+TRANSCRIPT:
+{text}"""
     
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
@@ -93,19 +115,23 @@ Después dame un segundo resumen mucho más detallado que permita ver datos y ca
     return "Error al generar resumen: No se recibieron candidates"
 
 def format_as_html(summary, transcripts, titles):
-    """Formatea el contenido como HTML"""
+    """Formatea el contenido como HTML con 3 niveles de análisis"""
     html = f"""
-    <h1>Resumen de Videos</h1>
-    <h2>Resumen General</h2>
-    <div>{summary}</div>
+    <h1>Análisis de Videos</h1>
+    
+    {summary}
+    
     <hr>
-    <h2>Transcripciones Completas</h2>
+    <h2>NIVEL 3: Transcript Completo (Búsqueda de Detalles)</h2>
+    <p><i>Este nivel contiene el transcript íntegro para buscar información muy específica que no esté en los niveles anteriores.</i></p>
     """
     
     for i, (transcript, title) in enumerate(zip(transcripts, titles)):
         html += f"""
         <h3>Video {i+1}: {title}</h3>
-        <div>{transcript}</div>
+        <div style="background-color: #f5f5f5; padding: 10px; border-left: 3px solid #ccc;">
+            {transcript}
+        </div>
         <hr>
         """
     
