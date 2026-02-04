@@ -66,7 +66,7 @@ def get_transcripts(video_urls):
 
 def summarize_with_gemini(text):
     """Resume texto con Google Gemini"""
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-3-flash-preview:generateContent?key={GEMINI_KEY}"
     
     prompt = f"""Hazme un resumen en español muy completo y que incluya toda la información relevante del siguiente transcript sin hacerme comentarios adicionales porque se va a publicar directo:
 
