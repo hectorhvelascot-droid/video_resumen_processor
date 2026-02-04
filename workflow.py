@@ -201,8 +201,8 @@ def get_transcripts(video_urls):
     print(f"Enviando petición a Apify con URLs: {video_urls}")
     response = requests.post(url, json=payload, timeout=300)
     
-    # Verificar si la respuesta es exitosa
-    if response.status_code != 200:
+    # Verificar si la respuesta es exitosa (200 o 201 son OK)
+    if response.status_code not in [200, 201]:
         print(f"Error HTTP {response.status_code}: {response.text}")
         raise ValueError(f"Apify returned HTTP {response.status_code}")
     
