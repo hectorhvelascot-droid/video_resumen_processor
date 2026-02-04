@@ -79,17 +79,38 @@ def process_video_from_telegram(video_url, chat_id):
         # Obtener transcripción
         print("📝 Obteniendo transcripción...")
         transcripts_data = get_transcripts([video_url])
-        print("✅ Transcripción obtenida")
+        print(f"Respuesta Apify: {json.dumps(transcripts_data)[:500]}...")  # Log de debug
         
         # Extraer captions
         captions = []
         for item in transcripts_data:
+            print(f"Procesando item: {item.keys() if isinstance(item, dict) else 'No es dict'}")
             if 'captions' in item and item['captions']:
-                caption_texts = [caption['text'] if isinstance(caption, dict) and 'text' in caption else str(caption) for caption in item['captions']]
+                caption_list = item['captions']
+                print(f"Captions encontrados: {len(caption_list)} items")
+                if len(caption_list) > 0:
+                    print(f"Primer caption: {caption_list[0]}")
+                
+                caption_texts = []
+                for caption in caption_list:
+                    if isinstance(caption, dict) and 'text' in caption:
+                        caption_texts.append(caption['text'])
+                    elif isinstance(caption, str):
+                        caption_texts.append(caption)
+                    else:
+                        caption_texts.append(str(caption))
+                
                 full_transcript = " ".join(caption_texts)
+                print(f"Transcript extraído: {len(full_transcript)} caracteres")
                 captions.append(full_transcript)
+            else:
+                print("No se encontraron captions en el item")
+        
+        if not captions:
+            raise ValueError("No se pudo obtener la transcripción del video")
         
         all_text = " ".join(captions)
+        print(f"Texto total para resumen: {len(all_text)} caracteres")
         
         # Generar resumen
         print("🤖 Generando resumen con Gemini...")
