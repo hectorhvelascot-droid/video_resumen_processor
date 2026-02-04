@@ -81,9 +81,14 @@ Después dame un segundo resumen mucho más detallado que permita ver datos y ca
     response = requests.post(url, json=payload)
     data = response.json()
     
+    print(f"Respuesta Gemini: {data}")
+    
     if 'candidates' in data:
         return data['candidates'][0]['content']['parts'][0]['text']
-    return "Error al generar resumen"
+    elif 'error' in data:
+        print(f"Error Gemini: {data['error']}")
+        return f"Error al generar resumen: {data['error'].get('message', 'Error desconocido')}"
+    return "Error al generar resumen: No se recibieron candidates"
 
 def format_as_html(summary, transcripts, titles):
     """Formatea el contenido como HTML"""
