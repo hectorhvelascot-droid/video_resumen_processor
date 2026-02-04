@@ -10,6 +10,7 @@ GEMINI_KEY = os.getenv("GEMINI_KEY")
 READWISE_TOKEN = os.getenv("READWISE_TOKEN")
 PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN")
 PUSHOVER_USER = os.getenv("PUSHOVER_USER")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 def send_notification(message):
     """Envía notificación a tu teléfono"""
@@ -22,6 +23,99 @@ def send_notification(message):
             })
         except:
             pass
+
+def send_telegram_message(chat_id, message):
+    """Envía mensaje a Telegram"""
+    if TELEGRAM_BOT_TOKEN:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            requests.post(url, json={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            })
+        except Exception as e:
+            print(f"Error enviando mensaje a Telegram: {e}")
+
+def get_video_info(video_url):
+    """Obtiene información de un video de YouTube individual"""
+    # Extraer video ID de la URL
+    if "v=" in video_url:
+        video_id = video_url.split("v=")[1].split("&")[0]
+    elif "youtu.be/" in video_url:
+        video_id = video_url.split("youtu.be/")[1].split("?")[0]
+    else:
+        raise ValueError("URL de YouTube no válida")
+    
+    # Obtener información del video
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    params = {
+        "part": "snippet",
+        "id": video_id,
+        "key": YT_API_KEY
+    }
+    response = requests.get(url, params=params)
+    data = response.json()
+    
+    if data.get('items'):
+        return {
+            'video_id': video_id,
+            'title': data['items'][0]['snippet']['title'],
+            'channel': data['items'][0]['snippet']['channelTitle']
+        }
+    else:
+        raise ValueError("No se pudo obtener información del video")
+
+def process_video_from_telegram(video_url, chat_id):
+    """Procesa un video individual enviado desde Telegram"""
+    try:
+        print(f"[{datetime.now()}] 🚀 Iniciando procesamiento desde Telegram...")
+        send_telegram_message(chat_id, "🚀 <b>Procesando video...</b>\nExtrayendo información y transcripción")
+        
+        # Obtener información del video
+        video_info = get_video_info(video_url)
+        print(f"📹 Video: {video_info['title']}")
+        
+        # Obtener transcripción
+        print("📝 Obteniendo transcripción...")
+        transcripts_data = get_transcripts([video_url])
+        print("✅ Transcripción obtenida")
+        
+        # Extraer captions
+        captions = []
+        for item in transcripts_data:
+            if 'captions' in item and item['captions']:
+                caption_texts = [caption['text'] if isinstance(caption, dict) and 'text' in caption else str(caption) for caption in item['captions']]
+                full_transcript = " ".join(caption_texts)
+                captions.append(full_transcript)
+        
+        all_text = " ".join(captions)
+        
+        # Generar resumen
+        print("🤖 Generando resumen con Gemini...")
+        send_telegram_message(chat_id, "🤖 <b>Generando resumen con IA...</b>")
+        summary = summarize_with_gemini(all_text)
+        print("✅ Resumen generado")
+        
+        # Formatear HTML
+        print("🎨 Formateando HTML...")
+        html_content = format_as_html(summary, captions, [video_info['title']])
+        
+        # Guardar en Readwise
+        print("💾 Guardando en Readwise...")
+        send_telegram_message(chat_id, "💾 <b>Guardando en Readwise...</b>")
+        result = save_to_readwise(html_content, f"Video - {video_info['title']}")
+        print(f"✅ Guardado en Readwise: {result}")
+        
+        # Notificar éxito
+        send_telegram_message(chat_id, f"✅ <b>¡Listo!</b>\n\n📹 <b>{video_info['title']}</b>\n👤 {video_info['channel']}\n\nEl resumen ha sido guardado en Readwise.")
+        print(f"[{datetime.now()}] ✅ Proceso completado exitosamente")
+        
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}"
+        print(f"[{datetime.now()}] {error_msg}")
+        send_telegram_message(chat_id, error_msg)
+        raise
 
 def get_playlist_videos(playlist_id):
     """Obtiene videos de playlist de YouTube"""
