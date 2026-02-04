@@ -141,8 +141,11 @@ def process_playlist():
         # Extraer captions
         captions = []
         for item in transcripts_data:
-            if 'captions' in item:
-                captions.append(item['captions'])
+            if 'captions' in item and item['captions']:
+                # Unir todos los textos de los captions en un solo string
+                caption_texts = [caption['text'] if isinstance(caption, dict) and 'text' in caption else str(caption) for caption in item['captions']]
+                full_transcript = " ".join(caption_texts)
+                captions.append(full_transcript)
         
         all_text = " ".join(captions)
         
