@@ -81,35 +81,54 @@ def process_video_from_telegram(video_url, chat_id):
         transcripts_data = get_transcripts([video_url])
         print(f"Respuesta Apify: {json.dumps(transcripts_data)[:500]}...")  # Log de debug
         
-        # Extraer captions
+        # Extraer transcripciones
         captions = []
-        for item in transcripts_data:
-            print(f"Procesando item: {item.keys() if isinstance(item, dict) else 'No es dict'}")
-            if 'captions' in item and item['captions']:
-                caption_list = item['captions']
-                print(f"Captions encontrados: {len(caption_list)} items")
-                if len(caption_list) > 0:
-                    print(f"Primer caption: {caption_list[0]}")
+        
+        # Manejar diferentes formatos de respuesta
+        if isinstance(transcripts_data, list):
+            for item in transcripts_data:
+                print(f"Procesando item tipo: {type(item)}")
                 
-                caption_texts = []
-                for caption in caption_list:
-                    if isinstance(caption, dict) and 'text' in caption:
-                        caption_texts.append(caption['text'])
-                    elif isinstance(caption, str):
-                        caption_texts.append(caption)
+                if isinstance(item, dict):
+                    # Formato con campo 'text' (nuevo formato simplificado)
+                    if 'text' in item and item['text']:
+                        transcript_text = item['text']
+                        print(f"Transcript encontrado (formato text): {len(transcript_text)} caracteres")
+                        captions.append(transcript_text)
+                    # Formato antiguo con 'captions'
+                    elif 'captions' in item and item['captions']:
+                        caption_list = item['captions']
+                        print(f"Captions encontrados: {len(caption_list)} items")
+                        
+                        caption_texts = []
+                        for caption in caption_list:
+                            if isinstance(caption, dict) and 'text' in caption:
+                                caption_texts.append(caption['text'])
+                            elif isinstance(caption, str):
+                                caption_texts.append(caption)
+                            else:
+                                caption_texts.append(str(caption))
+                        
+                        full_transcript = " ".join(caption_texts)
+                        print(f"Transcript extraído: {len(full_transcript)} caracteres")
+                        captions.append(full_transcript)
                     else:
-                        caption_texts.append(str(caption))
-                
-                full_transcript = " ".join(caption_texts)
-                print(f"Transcript extraído: {len(full_transcript)} caracteres")
-                captions.append(full_transcript)
-            else:
-                print("No se encontraron captions en el item")
+                        print(f"Keys disponibles: {item.keys()}")
+                elif isinstance(item, str):
+                    # Si el item es directamente un string
+                    print(f"Transcript como string: {len(item)} caracteres")
+                    captions.append(item)
+        elif isinstance(transcripts_data, dict):
+            print(f"Respuesta es dict con keys: {transcripts_data.keys()}")
+            if 'text' in transcripts_data:
+                captions.append(transcripts_data['text'])
         
         if not captions:
+            print(f"Respuesta completa de Apify: {json.dumps(transcripts_data)[:1000]}")
             raise ValueError("No se pudo obtener la transcripción del video")
         
         all_text = " ".join(captions)
+        print(f"Texto total para resumen: {len(all_text)} caracteres")
         print(f"Texto total para resumen: {len(all_text)} caracteres")
         
         # Generar resumen
@@ -162,22 +181,39 @@ def get_playlist_videos(playlist_id):
 def get_transcripts(video_urls):
     """Obtiene transcripciones con Apify"""
     url = f"https://api.apify.com/v2/acts/karamelo~youtube-transcripts/run-sync-get-dataset-items?token={APIFY_TOKEN}"
+    
+    # Payload completo sin especificar país (para evitar error de proxy)
     payload = {
         "urls": video_urls,
         "outputFormat": "captions",
         "proxyOptions": {
             "useApifyProxy": True,
-            "apifyProxyGroups": ["RESIDENTIAL"],
-            "apifyProxyCountry": "MX"
+            "apifyProxyGroups": ["RESIDENTIAL"]
+            # NOTA: No especificamos país para evitar errores de disponibilidad
         },
-        "maxRetries": 8,
+        "maxRetries": 3,
         "channelHandleBoolean": True,
         "channelNameBoolean": True,
         "datePublishedBoolean": True,
         "relativeDateTextBoolean": True
     }
+    
+    print(f"Enviando petición a Apify con URLs: {video_urls}")
     response = requests.post(url, json=payload, timeout=300)
-    return response.json()
+    
+    # Verificar si la respuesta es exitosa
+    if response.status_code != 200:
+        print(f"Error HTTP {response.status_code}: {response.text}")
+        raise ValueError(f"Apify returned HTTP {response.status_code}")
+    
+    result = response.json()
+    
+    # Verificar si hay error en la respuesta
+    if isinstance(result, dict) and 'error' in result:
+        print(f"Error de Apify: {result['error']}")
+        raise ValueError(f"Apify error: {result['error']}")
+    
+    return result
 
 def summarize_with_gemini(text):
     """Resume texto con Google Gemini"""
