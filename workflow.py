@@ -215,11 +215,11 @@ def get_transcripts(video_urls):
     
     return result
 
-def summarize_with_gemini(text):
+def summarize_with_gemini(text, video_title="Video"):
     """Resume texto con Google Gemini"""
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     
-    prompt = f"""Analiza el siguiente transcript y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
+    prompt = f"""Analiza el siguiente transcript del video "{video_title}" y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
 
 NIVEL 1 - RESUMEN EJECUTIVO (Muy Consolidado):
 - Máximo 3-5 puntos clave
@@ -235,10 +235,10 @@ NIVEL 2 - ANÁLISIS DETALLADO (Desarrollado):
 - Usa <p> para párrafos y <b> para énfasis
 
 FORMATO REQUERIDO:
-<h2>NIVEL 1: Resumen Ejecutivo</h2>
+<h2>NIVEL 1: Resumen Ejecutivo - {video_title}</h2>
 [contenido]
 
-<h2>NIVEL 2: Análisis Detallado</h2>
+<h2>NIVEL 2: Análisis Detallado - {video_title}</h2>
 [contenido]
 
 IMPORTANTE: 
@@ -264,6 +264,19 @@ TRANSCRIPT:
         print(f"Error Gemini: {data['error']}")
         return f"Error al generar resumen: {data['error'].get('message', 'Error desconocido')}"
     return "Error al generar resumen: No se recibieron candidates"
+
+def summarize_multiple_videos(transcripts, titles):
+    """Resume múltiples videos y combina los resultados"""
+    all_summaries = []
+    
+    for i, (transcript, title) in enumerate(zip(transcripts, titles)):
+        print(f"🤖 Generando resumen para video {i+1}/{len(titles)}: {title}")
+        summary = summarize_with_gemini(transcript, title)
+        all_summaries.append(summary)
+    
+    # Combinar todos los resúmenes
+    combined_summary = "\n\n".join(all_summaries)
+    return combined_summary
 
 def format_as_html(summary, transcripts, titles, video_url=None):
     """Formatea el contenido como HTML con 3 niveles de análisis"""
@@ -340,12 +353,10 @@ def process_playlist():
                 full_transcript = " ".join(caption_texts)
                 captions.append(full_transcript)
         
-        all_text = " ".join(captions)
-        
-        # Paso 3: Resumir
-        print("🤖 Generando resumen con Gemini...")
-        summary = summarize_with_gemini(all_text)
-        print("✅ Resumen generado")
+        # Paso 3: Resumir cada video individualmente
+        print("🤖 Generando resúmenes con Gemini...")
+        summary = summarize_multiple_videos(captions, titles)
+        print("✅ Resúmenes generados")
         
         # Paso 4: Formatear HTML
         print("🎨 Formateando HTML...")
