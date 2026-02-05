@@ -171,12 +171,14 @@ def get_playlist_videos(playlist_id):
     
     video_urls = []
     titles = []
+    video_ids = []
     for item in data.get('items', []):
         video_id = item['contentDetails']['videoId']
         video_urls.append(f"https://www.youtube.com/watch?v={video_id}")
         titles.append(item['snippet']['title'])
+        video_ids.append(video_id)
     
-    return video_urls, titles
+    return video_urls, titles, video_ids
 
 def get_transcripts(video_urls):
     """Obtiene transcripciones con Apify"""
@@ -336,22 +338,48 @@ def process_playlist():
         
         # Paso 1: Obtener videos
         print("📹 Obteniendo videos de la playlist...")
-        video_urls, titles = get_playlist_videos(playlist_id)
+        video_urls, titles, video_ids = get_playlist_videos(playlist_id)
         print(f"✅ Encontrados {len(video_urls)} videos")
+        print(f"Video IDs: {video_ids}")
+        print(f"Títulos: {titles}")
         
         # Paso 2: Obtener transcripciones
         print("📝 Obteniendo transcripciones...")
         transcripts_data = get_transcripts(video_urls)
         print("✅ Transcripciones obtenidas")
         
-        # Extraer captions
+        # Extraer captions y emparejar con video_ids
         captions = []
+        captions_map = {}  # Mapa video_id -> transcript
+        
         for item in transcripts_data:
-            if 'captions' in item and item['captions']:
-                # Unir todos los textos de los captions en un solo string
-                caption_texts = [caption['text'] if isinstance(caption, dict) and 'text' in caption else str(caption) for caption in item['captions']]
-                full_transcript = " ".join(caption_texts)
-                captions.append(full_transcript)
+            if isinstance(item, dict):
+                # Obtener el video_id de este item
+                item_video_id = item.get('videoId') or item.get('id')
+                
+                if 'captions' in item and item['captions']:
+                    # Unir todos los textos de los captions en un solo string
+                    caption_texts = [caption['text'] if isinstance(caption, dict) and 'text' in caption else str(caption) for caption in item['captions']]
+                    full_transcript = " ".join(caption_texts)
+                    
+                    if item_video_id:
+                        captions_map[item_video_id] = full_transcript
+                        print(f"Transcript asignado a video_id: {item_video_id}")
+                    else:
+                        # Si no hay video_id, agregar a la lista en orden
+                        captions.append(full_transcript)
+        
+        # Reconstruir la lista de captions en el orden correcto de video_ids
+        if captions_map:
+            captions = []
+            for vid_id in video_ids:
+                if vid_id in captions_map:
+                    captions.append(captions_map[vid_id])
+                else:
+                    print(f"⚠️ No se encontró transcript para video_id: {vid_id}")
+                    captions.append("")
+        
+        print(f"Total de captions extraídos: {len(captions)}")
         
         # Paso 3: Resumir cada video individualmente
         print("🤖 Generando resúmenes con Gemini...")
