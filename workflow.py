@@ -8,6 +8,7 @@ from datetime import datetime
 YT_API_KEY = os.getenv("YT_API_KEY")
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
+OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
 READWISE_TOKEN = os.getenv("READWISE_TOKEN")
 PUSHOVER_TOKEN = os.getenv("PUSHOVER_TOKEN")
 PUSHOVER_USER = os.getenv("PUSHOVER_USER")
@@ -218,11 +219,9 @@ def get_transcripts(video_urls):
     
     return result
 
-def summarize_with_gemini(text, video_title="Video", max_retries=3):
-    """Resume texto con Google Gemini con reintentos"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-    
-    prompt = f"""Analiza el siguiente transcript del video "{video_title}" y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
+def _build_summary_prompt(text, video_title):
+    """Construye el prompt para generar el resumen"""
+    return f"""Analiza el siguiente transcript del video "{video_title}" y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
 
 NIVEL 1 - RESUMEN EJECUTIVO (Muy Consolidado):
 - Máximo 3-5 puntos clave
@@ -251,60 +250,103 @@ IMPORTANTE:
 
 TRANSCRIPT:
 {text}"""
+
+def _call_openrouter(prompt):
+    """Llama a Gemini a través de OpenRouter (evita bloqueo de IP)"""
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://video-resumen-processor.onrender.com",
+        "X-Title": "Video Resumen Processor"
+    }
+    payload = {
+        "model": "google/gemini-2.0-flash-001",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 8000
+    }
     
+    response = requests.post(url, headers=headers, json=payload, timeout=120)
+    data = response.json()
+    
+    if response.status_code != 200:
+        error_msg = data.get('error', {}).get('message', f'HTTP {response.status_code}')
+        raise ValueError(f"OpenRouter error: {error_msg}")
+    
+    if 'choices' in data and len(data['choices']) > 0:
+        return data['choices'][0]['message']['content']
+    else:
+        raise ValueError(f"OpenRouter: respuesta inesperada: {json.dumps(data)[:300]}")
+
+def _call_gemini_direct(prompt):
+    """Llama directamente a la API de Gemini"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}]
     }
     
+    response = requests.post(url, json=payload, timeout=120)
+    data = response.json()
+    
+    if response.status_code != 200:
+        error_msg = data.get('error', {}).get('message', f'HTTP {response.status_code}')
+        raise ValueError(f"Gemini API error: {error_msg}")
+    
+    if 'candidates' in data:
+        return data['candidates'][0]['content']['parts'][0]['text']
+    elif 'error' in data:
+        raise ValueError(f"Gemini error: {data['error'].get('message', 'Error desconocido')}")
+    else:
+        raise ValueError("Gemini: No se recibieron candidates en la respuesta")
+
+def summarize_with_gemini(text, video_title="Video", max_retries=3):
+    """Resume texto usando OpenRouter (primario) o Gemini directo (fallback)"""
+    prompt = _build_summary_prompt(text, video_title)
+    
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"Intento {attempt}/{max_retries} para Gemini API...")
-            response = requests.post(url, json=payload, timeout=120)
-            data = response.json()
+            # Intentar con OpenRouter primero (evita bloqueo de IP de Render)
+            if OPENROUTER_KEY:
+                print(f"Intento {attempt}/{max_retries} via OpenRouter...")
+                result = _call_openrouter(prompt)
+                print("✅ Resumen generado via OpenRouter")
+                return result
             
-            # Check HTTP status first
-            if response.status_code != 200:
-                error_msg = data.get('error', {}).get('message', f'HTTP {response.status_code}')
-                print(f"Error HTTP Gemini (intento {attempt}): {error_msg}")
-                last_error = error_msg
-                
-                # If it's a location error, don't retry - it won't change
-                if 'location' in error_msg.lower() and 'not supported' in error_msg.lower():
-                    raise ValueError(
-                        f"Error de ubicación de Gemini API: {error_msg}. "
-                        f"La IP del servidor no está en una región soportada. "
-                        f"Soluciones: 1) Cambiar la región de Render a 'Oregon (US West)', "
-                        f"2) Usar Vertex AI en lugar del endpoint directo, "
-                        f"3) Verificar la configuración de tu cuenta de Google."
-                    )
-                
-                if attempt < max_retries:
-                    wait_time = attempt * 5
-                    print(f"Esperando {wait_time}s antes de reintentar...")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    raise ValueError(f"Error al generar resumen después de {max_retries} intentos: {error_msg}")
+            # Fallback: Gemini directo (funciona localmente, puede fallar en Render)
+            if GEMINI_KEY:
+                print(f"Intento {attempt}/{max_retries} via Gemini directo...")
+                result = _call_gemini_direct(prompt)
+                print("✅ Resumen generado via Gemini directo")
+                return result
             
-            if 'candidates' in data:
-                return data['candidates'][0]['content']['parts'][0]['text']
-            elif 'error' in data:
-                error_msg = data['error'].get('message', 'Error desconocido')
-                print(f"Error Gemini: {error_msg}")
-                raise ValueError(f"Error al generar resumen: {error_msg}")
-            else:
-                raise ValueError("Error al generar resumen: No se recibieron candidates en la respuesta")
-                
+            raise ValueError("No hay API key configurada. Configura OPENROUTER_KEY o GEMINI_KEY.")
+            
+        except ValueError as e:
+            last_error = str(e)
+            print(f"❌ Error (intento {attempt}): {e}")
+            
+            # Si OpenRouter falló, intentar Gemini directo como fallback
+            if OPENROUTER_KEY and GEMINI_KEY and 'OpenRouter' in str(e):
+                try:
+                    print(f"Intentando fallback con Gemini directo...")
+                    result = _call_gemini_direct(prompt)
+                    print("✅ Resumen generado via Gemini directo (fallback)")
+                    return result
+                except ValueError as e2:
+                    print(f"❌ Fallback Gemini también falló: {e2}")
+                    last_error = f"OpenRouter: {e} | Gemini: {e2}"
+            
+            if attempt < max_retries:
+                wait_time = attempt * 3
+                print(f"Esperando {wait_time}s antes de reintentar...")
+                time.sleep(wait_time)
+            
         except requests.exceptions.RequestException as e:
             last_error = str(e)
             print(f"Error de conexión (intento {attempt}): {e}")
             if attempt < max_retries:
-                wait_time = attempt * 5
-                print(f"Esperando {wait_time}s antes de reintentar...")
-                time.sleep(wait_time)
-            else:
-                raise ValueError(f"Error de conexión con Gemini después de {max_retries} intentos: {last_error}")
+                time.sleep(attempt * 3)
     
     raise ValueError(f"Error al generar resumen después de {max_retries} intentos: {last_error}")
 
