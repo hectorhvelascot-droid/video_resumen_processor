@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import time
 from datetime import datetime
 
 # Obtener credenciales de variables de entorno
@@ -217,9 +218,9 @@ def get_transcripts(video_urls):
     
     return result
 
-def summarize_with_gemini(text, video_title="Video"):
-    """Resume texto con Google Gemini"""
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+def summarize_with_gemini(text, video_title="Video", max_retries=3):
+    """Resume texto con Google Gemini con reintentos"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     
     prompt = f"""Analiza el siguiente transcript del video "{video_title}" y genera DOS NIVELES DE ANÁLISIS en formato HTML puro (no markdown):
 
@@ -255,17 +256,57 @@ TRANSCRIPT:
         "contents": [{"parts": [{"text": prompt}]}]
     }
     
-    response = requests.post(url, json=payload)
-    data = response.json()
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"Intento {attempt}/{max_retries} para Gemini API...")
+            response = requests.post(url, json=payload, timeout=120)
+            data = response.json()
+            
+            # Check HTTP status first
+            if response.status_code != 200:
+                error_msg = data.get('error', {}).get('message', f'HTTP {response.status_code}')
+                print(f"Error HTTP Gemini (intento {attempt}): {error_msg}")
+                last_error = error_msg
+                
+                # If it's a location error, don't retry - it won't change
+                if 'location' in error_msg.lower() and 'not supported' in error_msg.lower():
+                    raise ValueError(
+                        f"Error de ubicación de Gemini API: {error_msg}. "
+                        f"La IP del servidor no está en una región soportada. "
+                        f"Soluciones: 1) Cambiar la región de Render a 'Oregon (US West)', "
+                        f"2) Usar Vertex AI en lugar del endpoint directo, "
+                        f"3) Verificar la configuración de tu cuenta de Google."
+                    )
+                
+                if attempt < max_retries:
+                    wait_time = attempt * 5
+                    print(f"Esperando {wait_time}s antes de reintentar...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise ValueError(f"Error al generar resumen después de {max_retries} intentos: {error_msg}")
+            
+            if 'candidates' in data:
+                return data['candidates'][0]['content']['parts'][0]['text']
+            elif 'error' in data:
+                error_msg = data['error'].get('message', 'Error desconocido')
+                print(f"Error Gemini: {error_msg}")
+                raise ValueError(f"Error al generar resumen: {error_msg}")
+            else:
+                raise ValueError("Error al generar resumen: No se recibieron candidates en la respuesta")
+                
+        except requests.exceptions.RequestException as e:
+            last_error = str(e)
+            print(f"Error de conexión (intento {attempt}): {e}")
+            if attempt < max_retries:
+                wait_time = attempt * 5
+                print(f"Esperando {wait_time}s antes de reintentar...")
+                time.sleep(wait_time)
+            else:
+                raise ValueError(f"Error de conexión con Gemini después de {max_retries} intentos: {last_error}")
     
-    print(f"Respuesta Gemini: {data}")
-    
-    if 'candidates' in data:
-        return data['candidates'][0]['content']['parts'][0]['text']
-    elif 'error' in data:
-        print(f"Error Gemini: {data['error']}")
-        return f"Error al generar resumen: {data['error'].get('message', 'Error desconocido')}"
-    return "Error al generar resumen: No se recibieron candidates"
+    raise ValueError(f"Error al generar resumen después de {max_retries} intentos: {last_error}")
 
 def summarize_multiple_videos(transcripts, titles):
     """Resume múltiples videos y combina los resultados"""
