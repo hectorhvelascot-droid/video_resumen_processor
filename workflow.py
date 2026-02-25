@@ -178,6 +178,7 @@ def get_playlist_videos(playlist_id):
     video_urls = []
     titles = []
     video_ids = []
+    channel_titles = []
     playlist_item_ids = [] # Necesario para borrarlos después
     
     for item in data.get('items', []):
@@ -187,9 +188,10 @@ def get_playlist_videos(playlist_id):
         video_urls.append(f"https://www.youtube.com/watch?v={video_id}")
         titles.append(item['snippet']['title'])
         video_ids.append(video_id)
+        channel_titles.append(item['snippet']['videoOwnerChannelTitle']) # Nombre del canal
         playlist_item_ids.append(item_id)
     
-    return video_urls, titles, video_ids, playlist_item_ids
+    return video_urls, titles, video_ids, playlist_item_ids, channel_titles
     
 def _get_youtube_access_token():
     """Obtiene un token de acceso fresco usando OAuth 2.0 y el Refresh Token"""
@@ -422,30 +424,39 @@ def summarize_multiple_videos(transcripts, titles):
     combined_summary = "\n\n".join(all_summaries)
     return combined_summary
 
-def format_as_html(summary, transcripts, titles, video_url=None):
+def format_as_html(summary, transcripts, titles, video_urls=None, channel_titles=None):
     """Formatea el contenido como HTML con 3 niveles de análisis"""
     html = f"""
     <h1>Análisis de Videos</h1>
     """
     
-    if video_url:
-        html += f'<p><b>🔗 Ver video:</b> <a href="{video_url}">{video_url}</a></p>'
-    
     html += f"""
     {summary}
     
     <hr>
-    <h2>NIVEL 3: Transcript Completo (Búsqueda de Detalles)</h2>
-    <p><i>Este nivel contiene el transcript íntegro para buscar información muy específica que no esté en los niveles anteriores.</i></p>
+    <h2>NIVEL 3: Transcripts y Enlaces</h2>
+    <p><i>Este nivel contiene información detallada y los enlaces directos a cada video procesado.</i></p>
     """
     
-    for i, (transcript, title) in enumerate(zip(transcripts, titles)):
+    # Manejar caso de listas vacías para evitar errores
+    if not video_urls: video_urls = ["#"] * len(titles)
+    if not channel_titles: channel_titles = ["Desconocido"] * len(titles)
+    
+    for i, (transcript, title, url, channel) in enumerate(zip(transcripts, titles, video_urls, channel_titles)):
         html += f"""
-        <h3>Video {i+1}: {title}</h3>
-        <div style="background-color: #f5f5f5; padding: 10px; border-left: 3px solid #ccc;">
-            {transcript}
+        <div style="margin-bottom: 30px; padding: 15px; border: 1px solid #eee; border-radius: 8px;">
+            <h3 style="margin-top: 0;">Video {i+1}: {title}</h3>
+            <p>
+                <b>📺 Canal:</b> {channel}<br>
+                <b>🔗 Link:</b> <a href="{url}">{url}</a>
+            </p>
+            <details>
+                <summary style="cursor: pointer; color: #555; text-decoration: underline;">Ver Transcript del Video</summary>
+                <div style="background-color: #f9f9f9; padding: 10px; border-left: 3px solid #ccc; margin-top: 10px;">
+                    {transcript}
+                </div>
+            </details>
         </div>
-        <hr>
         """
     
     return html
@@ -480,10 +491,11 @@ def process_playlist():
         
         # Paso 1: Obtener videos
         print("📹 Obteniendo videos de la playlist...")
-        video_urls, titles, video_ids, playlist_item_ids = get_playlist_videos(playlist_id)
+        video_urls, titles, video_ids, playlist_item_ids, channel_titles = get_playlist_videos(playlist_id)
         print(f"✅ Encontrados {len(video_urls)} videos")
         print(f"Video IDs: {video_ids}")
         print(f"Títulos: {titles}")
+        print(f"Canales: {channel_titles}")
         
         # Paso 2: Obtener transcripciones
         print("📝 Obteniendo transcripciones...")
@@ -530,7 +542,7 @@ def process_playlist():
         
         # Paso 4: Formatear HTML
         print("🎨 Formateando HTML...")
-        html_content = format_as_html(summary, captions, titles, None)
+        html_content = format_as_html(summary, captions, titles, video_urls, channel_titles)
         
         # Paso 5: Guardar en Readwise
         print("💾 Guardando en Readwise...")
