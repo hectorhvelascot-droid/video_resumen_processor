@@ -6,6 +6,10 @@ from datetime import datetime
 
 # Obtener credenciales de variables de entorno
 YT_API_KEY = os.getenv("YT_API_KEY")
+YT_CLIENT_ID = os.getenv("YT_CLIENT_ID")
+YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")
+YT_REFRESH_TOKEN = os.getenv("YT_REFRESH_TOKEN")
+
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
@@ -174,13 +178,68 @@ def get_playlist_videos(playlist_id):
     video_urls = []
     titles = []
     video_ids = []
+    playlist_item_ids = [] # Necesario para borrarlos después
+    
     for item in data.get('items', []):
         video_id = item['contentDetails']['videoId']
+        item_id = item['id'] # El ID único de este elemento en esta playlist
+        
         video_urls.append(f"https://www.youtube.com/watch?v={video_id}")
         titles.append(item['snippet']['title'])
         video_ids.append(video_id)
+        playlist_item_ids.append(item_id)
     
-    return video_urls, titles, video_ids
+    return video_urls, titles, video_ids, playlist_item_ids
+    
+def _get_youtube_access_token():
+    """Obtiene un token de acceso fresco usando OAuth 2.0 y el Refresh Token"""
+    if not all([YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN]):
+        raise ValueError("Faltan credenciales de OAuth para YouTube (Client ID, Client Secret o Refresh Token).")
+        
+    url = "https://oauth2.googleapis.com/token"
+    data = {
+        "client_id": YT_CLIENT_ID,
+        "client_secret": YT_CLIENT_SECRET,
+        "refresh_token": YT_REFRESH_TOKEN,
+        "grant_type": "refresh_token"
+    }
+    
+    response = requests.post(url, data=data)
+    response.raise_for_status()
+    tokens = response.json()
+    return tokens.get("access_token")
+
+def clear_playlist_items(playlist_item_ids):
+    """Elimina los videos de la playlist de YouTube"""
+    if not playlist_item_ids:
+        print("No hay items para borrar de la playlist.")
+        return
+        
+    try:
+        access_token = _get_youtube_access_token()
+    except Exception as e:
+        print(f"❌ Error obteniendo token de acceso para YouTube: {e}")
+        return
+        
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+    
+    url = "https://www.googleapis.com/youtube/v3/playlistItems"
+    
+    deleted_count = 0
+    for item_id in playlist_item_ids:
+        try:
+            response = requests.delete(f"{url}?id={item_id}", headers=headers)
+            if response.status_code == 204:
+                deleted_count += 1
+                print(f"🗑️ Eliminado item {item_id} de la playlist")
+            else:
+                print(f"⚠️ Error eliminando {item_id}: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"❌ Excepción al eliminar {item_id}: {e}")
+            
+    print(f"🧹 Se eliminaron {deleted_count} de {len(playlist_item_ids)} videos de la playlist.")
 
 def get_transcripts(video_urls):
     """Obtiene transcripciones con Apify"""
@@ -421,7 +480,7 @@ def process_playlist():
         
         # Paso 1: Obtener videos
         print("📹 Obteniendo videos de la playlist...")
-        video_urls, titles, video_ids = get_playlist_videos(playlist_id)
+        video_urls, titles, video_ids, playlist_item_ids = get_playlist_videos(playlist_id)
         print(f"✅ Encontrados {len(video_urls)} videos")
         print(f"Video IDs: {video_ids}")
         print(f"Títulos: {titles}")
@@ -478,7 +537,11 @@ def process_playlist():
         result = save_to_readwise(html_content, f"Video Resumen - {datetime.now().strftime('%Y-%m-%d')}", None)
         print(f"✅ Guardado en Readwise: {result}")
         
-        send_notification("✅ Video Resumen completado y guardado en Readwise!")
+        # Paso 6: Limpiar la playlist
+        print("🧹 Limpiando la playlist en YouTube...")
+        clear_playlist_items(playlist_item_ids)
+        
+        send_notification("✅ Video Resumen completado, guardado en Readwise y playlist limpiada!")
         print(f"[{datetime.now()}] ✅ Proceso completado exitosamente")
         
     except Exception as e:

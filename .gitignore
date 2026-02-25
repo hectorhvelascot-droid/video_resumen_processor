@@ -1,0 +1,15 @@
+# Credentials
+client_secret.json
+*.token
+YT_REFRESH_TOKEN.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
