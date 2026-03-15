@@ -17,8 +17,11 @@ def main():
     flow = InstalledAppFlow.from_client_secrets_file(
         'client_secret.json', SCOPES)
     
-    # Run the local server flow
-    creds = flow.run_local_server(port=0)
+    # Run the local server flow with prompt='consent' to ensure we get a refresh_token
+    creds = flow.run_local_server(
+        port=0, 
+        authorization_prompt_service_parameters={'prompt': 'consent', 'access_type': 'offline'}
+    )
 
     print("\n✅ Autenticación exitosa!\n")
     print("Guarda este Refresh Token en las variables de entorno de Render como YT_REFRESH_TOKEN:")

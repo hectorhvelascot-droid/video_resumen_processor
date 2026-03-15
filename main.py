@@ -90,7 +90,35 @@ async def run_telegram_workflow_async(video_url: str, chat_id: int):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": "video-processor"}
+    import os
+    return {
+        "status": "ok", 
+        "service": "video-processor",
+        "yt_env_configured": bool(os.getenv("YT_CLIENT_ID") and os.getenv("YT_CLIENT_SECRET") and os.getenv("YT_REFRESH_TOKEN"))
+    }
+
+@app.get("/test-youtube")
+async def test_youtube():
+    """Endpoint de diagnóstico para probar las credenciales de YouTube"""
+    try:
+        token = workflow._get_youtube_access_token()
+        return {
+            "status": "OK",
+            "message": "Token obtenido exitosamente",
+            "token_preview": f"{token[:10]}..." if token else "None"
+        }
+    except Exception as e:
+        import os
+        return {
+            "status": "ERROR",
+            "error_type": type(e).__name__,
+            "message": str(e),
+            "env_vars_present": {
+                "YT_CLIENT_ID": bool(os.getenv("YT_CLIENT_ID")),
+                "YT_CLIENT_SECRET": bool(os.getenv("YT_CLIENT_SECRET")),
+                "YT_REFRESH_TOKEN": bool(os.getenv("YT_REFRESH_TOKEN"))
+            }
+        }
 
 @app.get("/test-gemini")
 async def test_gemini():

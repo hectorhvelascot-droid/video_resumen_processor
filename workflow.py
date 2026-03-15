@@ -207,7 +207,10 @@ def _get_youtube_access_token():
     }
     
     response = requests.post(url, data=data)
-    response.raise_for_status()
+    if response.status_code != 200:
+        print(f"❌ Error de Google Auth ({response.status_code}): {response.text}")
+        response.raise_for_status()
+    
     tokens = response.json()
     return tokens.get("access_token")
 
